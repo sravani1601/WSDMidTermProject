@@ -1,16 +1,19 @@
 import json
 
-def dosa_orders(filename):
+def process_orders(filename):
     with open(filename, 'r') as file:
         orders = json.load(file)
 
-    customers = {}
+    customers = {order["phone"]: order["name"] for order in orders}
     items = {}
 
-    with open("customers.json", "w") as file:
-        json.dump(customers, file)
+    for order in orders:
+        for item in order["items"]:
+            name = item["name"]
+            items[name] = items.get(name, {"price": item["price"], "orders": 0})
+            items[name]["orders"] += 1
 
-    with open("items.json", "w") as file:
-        json.dump(items, file)
+    json.dump(customers, open("customers.json", "w"), indent=4)
+    json.dump(items, open("items.json", "w"), indent=4)
 
-dosa_orders("example_orders.json")
+process_orders("example_orders.json")
