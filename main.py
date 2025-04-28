@@ -21,6 +21,18 @@ class Order(BaseModel):
     notes:str
     item_list:conlist(int,min_length=1)
 
+class ItemUpdate(BaseModel):
+    name:str = None
+    price:float = None
+
+class CustomerUpdate(BaseModel):
+    name:str = None
+    phone:str = None
+
+class OrderUpdate(BaseModel):
+    notes: str = None
+    item_list: List[int] = None
+
 
 
 app = FastAPI()
@@ -86,6 +98,38 @@ async def create_order(order:Order):
     order.timestamp=timestamp
     return order
 
+
+
+@app.put("/order/{order_id}")
+def update_order(order_id: int, update: OrderUpdate):
+    connection = sqlite3.connect("db.sqlite")
+    cursor = connection.cursor()
+
+    cursor.execute("SELECT id FROM orders WHERE id = ?;", (order_id,))
+    if not cursor.fetchone():
+        connection.close()
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if update.notes is not None:
+        cursor.execute("UPDATE orders SET notes = ? WHERE id = ?;", (update.notes, order_id))
+
+    if update.item_list is not None:
+        # Delete old items for the order
+        cursor.execute("DELETE FROM item_list WHERE order_id = ?;", (order_id,))
+        # Add new items
+        for item_id in update.item_list:
+            cursor.execute("SELECT id FROM items WHERE id = ?;", (item_id,))
+            if not cursor.fetchone():
+                connection.close()
+                raise HTTPException(status_code=404, detail=f"Item id {item_id} not found")
+            cursor.execute("INSERT INTO item_list (order_id, item_id) VALUES (?, ?);", (order_id, item_id))
+
+    connection.commit()
+    connection.close()
+
+    return {"message": "Order updated successfully"}
+
+
     
 
 @app.delete("/order/{order_id}")
@@ -102,20 +146,22 @@ def delete_item(order_id):
     return
 
 @app.get("/item/{item_id}")
-def get_item(item_id):
+def get_item(item_id: int):
     connection = sqlite3.connect("db.sqlite")
     cursor = connection.cursor()
     initializeDB()
-    res=cursor.execute("select id,name,price,item_id from items where id=?;",(item_id,))
-    row=res.fetchone()
-    item_id, name, price = row
+    res = cursor.execute("SELECT id, name, price FROM items WHERE id = ?;", (item_id,))
+    row = res.fetchone()
+    connection.close()
 
+    if not row:
+        raise HTTPException(404, "Item not found")
 
     return {
-            "item_id":row[0],
-            "name":row[1],
-            "price":row[2],
-        }
+        "item_id": row[0],
+        "name": row[1],
+        "price": row[2],
+    }
 
 @app.post("/item")
 async def create_item(item:Item):
@@ -130,6 +176,25 @@ async def create_item(item:Item):
         "name":item.name,
         "price":item.price,
     }
+
+@app.put("/item/{item_id}")
+def update_item(item_id: int, update: ItemUpdate):
+    connection = sqlite3.connect("db.sqlite")
+    cursor = connection.cursor()
+
+    cursor.execute("SELECT id FROM items WHERE id = ?;", (item_id,))
+    if not cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    if update.name:
+        cursor.execute("UPDATE items SET name = ? WHERE id = ?;", (update.name, item_id))
+    if update.price:
+        cursor.execute("UPDATE items SET price = ? WHERE id = ?;", (update.price, item_id))
+
+    connection.commit()
+    connection.close()
+    return {"message": "Item updated successfully"}
+
 
 @app.delete("/item/{item_id}")
 def delete_item(item_id):
@@ -174,6 +239,24 @@ async def create_customer(customer:Customer):
         "name":customer.name,
         "phone":customer.phone,
     }
+
+@app.put("/customer/{cust_id}")
+def update_customer(cust_id: int, update: CustomerUpdate):
+    connection = sqlite3.connect("db.sqlite")
+    cursor = connection.cursor()
+
+    cursor.execute("SELECT id FROM customers WHERE id = ?;", (cust_id,))
+    if not cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    if update.name:
+        cursor.execute("UPDATE customers SET name = ? WHERE id = ?;", (update.name, cust_id))
+    if update.phone:
+        cursor.execute("UPDATE customers SET phone = ? WHERE id = ?;", (update.phone, cust_id))
+
+    connection.commit()
+    connection.close()
+    return {"message": "Customer updated successfully"}
 
 @app.delete("/customer/{cust_id}")
 def delete_item(cust_id):
