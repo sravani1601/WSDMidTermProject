@@ -1,12 +1,25 @@
 from fastapi import FastAPI, HTTPException
 import sqlite3
-from pydantic import BaseModel
+from pydantic import BaseModel,conlist
 import json
+from typing import List
 
 class Item(BaseModel):
     item_id:int
     name:str
     price:float
+
+class Customer(BaseModel):
+    cust_id:int
+    name:str
+    phone:str
+
+class Order(BaseModel):
+    order_id:int=0
+    timestamp:int=0
+    cust_id:int
+    notes:str
+    item_list:conlist(int,min_length=1)
 
 
 
@@ -47,40 +60,46 @@ def get_order(order_id: int):
     }
 
 @app.post("/order")
-async def create_order(order:Item):
+async def create_order(order:Order):
     connection = sqlite3.connect("db.sqlite")
     cursor = connection.cursor()
-    initializeDB()
+    res=cursor.execute("SELECT * FROM customers WHERE id=?;",(order.cust_id,))
+    if res.fetchone()==None:
+        raise HTTPException(404,"Customer not found")
+    for item_id in order.item_list:
+        res=cursor.execute("SELECT * FROM items WHERE id=?;",(item_id,))
+        if res.fetchone()==None:
+            raise HTTPException(404,"Item id not in DB")
 
-    cursor.execute("SELECT id FROM customers WHERE phone = ?;", (order.phone,))
-    result = cursor.fetchone()
-    if result:
-        cust_id = result[0]
-    else:
-        cursor.execute("INSERT INTO customers (name, phone) VALUES (?, ?);", (order.name, order.phone))
-        cust_id = cursor.lastrowid
 
-    cursor.execute("INSERT INTO orders (cust_id, notes) VALUES (?, ?);", (cust_id, order.notes))
+
+    res=cursor.execute("INSERT INTO orders (cust_id, notes) VALUES (?, ?);", (order.cust_id, order.notes))
     order_id = cursor.lastrowid
-
-    for item in order.items:
-        cursor.execute("SELECT id FROM items WHERE name = ?;", (item.name,))
-        result = cursor.fetchone()
-        if result:
-            item_id = result[0]
-        else:
-            cursor.execute("INSERT INTO items (name, price) VALUES (?, ?);", (item.name, item.price))
-            item_id = cursor.lastrowid
-
+    res=cursor.execute("SELECT timestamp FROM orders WHERE id=?;",(order_id,))
+    row=res.fetchone()
+    timestamp=row[0]
+    for item_id in order.item_list:
         cursor.execute("INSERT INTO item_list (order_id, item_id) VALUES (?, ?);", (order_id, item_id))
-
     connection.commit()
     connection.close()
+    order.order_id=order_id
+    order.timestamp=timestamp
+    return order
 
-    return {
-        "order_id": order_id
-         
-    }
+    
+
+@app.delete("/order/{order_id}")
+def delete_item(order_id):
+    connection = sqlite3.connect("db.sqlite")
+    cursor = connection.cursor()
+    res=cursor.execute("DELETE FROM orders WHERE id=?;", (order_id,))
+    if cursor.rowcount==0:
+        connection.commit()
+        connection.close()
+        raise HTTPException(404,"Item not found")
+    connection.commit()
+    connection.close()
+    return
 
 @app.get("/item/{item_id}")
 def get_item(item_id):
@@ -141,19 +160,34 @@ def get_item(cust_id):
 
     }
 
-@app.post("/order")
-async def create_item(item:Item):
+
+@app.post("/customer")
+async def create_customer(customer:Customer):
     connection = sqlite3.connect("db.sqlite")
     cursor = connection.cursor()
-    res=cursor.execute("INSERT INTO items (name, price) VALUES (?, ?);", (item.name, item.price))
-    item_id = cursor.lastrowid
+    res=cursor.execute("INSERT INTO customers (name, phone) VALUES (?, ?);", (customer.name, customer.phone))
+    cust_id = cursor.lastrowid
     connection.commit()
     connection.close()
     return {
-        "item_id":item_id,
-        "name":item.name,
-        "price":item.price,
+        "cust_id":cust_id,
+        "name":customer.name,
+        "phone":customer.phone,
     }
+
+@app.delete("/customer/{cust_id}")
+def delete_item(cust_id):
+    connection = sqlite3.connect("db.sqlite")
+    cursor = connection.cursor()
+    res=cursor.execute("DELETE FROM customers WHERE id=?;", (cust_id,))
+    if cursor.rowcount==0:
+        connection.commit()
+        connection.close()
+        raise HTTPException(404,"Item not found")
+    connection.commit()
+    connection.close()
+    return
+
 
 
 
